@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste WebSocket</title>
+</head>
+<body>
+<h2>Teste WebSocket</h2>
+<button onclick="sendMessage()">Enviar Mensagem</button>
+<script>
+    const socket = new WebSocket("ws://127.0.0.1:9001");
+
+    socket.onopen = () => console.log("Conectado ao WebSocket!");
+    socket.onmessage = (event) => console.log("WS:", event.data);
+    socket.onerror = (error) => console.error("Erro:", error);
+    socket.onclose = () => console.log("Conexão fechada");
+
+    function sendMessage() {
+        if (socket.readyState === WebSocket.OPEN) {
+            socket.send("Olá do navegador!");
+        } else {
+            console.log("WebSocket não está conectado.");
+        }
+    }
+</script>
+</body>
+</html>

@@ -1,20 +1,30 @@
-use actix_web::{App, HttpServer};
-use dotenv::dotenv;
-use tracing_actix_web::TracingLogger;
+use futures_util::SinkExt;
+use tokio_tungstenite::accept_async;
+use futures_util::stream::StreamExt;
+use tokio::net::TcpListener;
 
 mod model;
 mod schema;
 mod util;
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
-    dotenv().ok();
-    HttpServer::new(|| {
-        App::new()
-            .wrap(TracingLogger::default())
-    })
-    .bind("0.0.0.0:8080")?
-    .run()
-    .await
+#[tokio::main]
+async fn main() {
+    let listener = TcpListener::bind("127.0.0.1:9001")
+        .await.expect("Falha ao iniciar servidor");
+
+    println!("Servidor WebSocket rodando em ws://127.0.0.1:9001");
+
+    while let Ok((stream, _)) = listener.accept().await {
+        tokio::spawn(async move {
+            let ws_stream = accept_async(stream).await.expect("Erro ao aceitar conexão");
+            println!("Cliente conectado!");
+
+            let (mut write, mut read) = ws_stream.split();
+
+            while let Some(Ok(msg)) = read.next().await {
+                println!("Recebido: {:?}", msg);
+                write.send(msg).await.expect("Erro ao enviar resposta");
+            }
+        });
+    }
 }
