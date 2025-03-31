@@ -1,30 +1,78 @@
-use futures_util::SinkExt;
-use tokio_tungstenite::accept_async;
-use futures_util::stream::StreamExt;
-use tokio::net::TcpListener;
-
+#[macro_use]
+extern crate log;
 mod model;
 mod schema;
 mod util;
 
+use futures_util::{SinkExt, StreamExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::{
+    accept_hdr_async,
+    tungstenite::{
+        Message, connect,
+        handshake::server::{Request, Response},
+    },
+};
+
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:9001")
-        .await.expect("Falha ao iniciar servidor");
+    env_logger::builder().format_timestamp(None).init();
 
-    println!("Servidor WebSocket rodando em ws://127.0.0.1:9001");
+    tokio::spawn(async move {
+        server().await;
+    });
+    client();
+}
 
-    while let Ok((stream, _)) = listener.accept().await {
-        tokio::spawn(async move {
-            let ws_stream = accept_async(stream).await.expect("Erro ao aceitar conexão");
-            println!("Cliente conectado!");
+async fn server() {
+    let server = TcpListener::bind("127.0.0.1:8080").await.unwrap();
 
-            let (mut write, mut read) = ws_stream.split();
+    while let Ok((stream, _)) = server.accept().await {
+        tokio::spawn(accept_connection(stream));
+    }
+}
 
-            while let Some(Ok(msg)) = read.next().await {
-                println!("Recebido: {:?}", msg);
-                write.send(msg).await.expect("Erro ao enviar resposta");
-            }
-        });
+async fn accept_connection(stream: TcpStream) {
+    let callback = |req: &Request, mut response: Response| {
+        println!("Received a new ws handshake");
+        println!("The request's path is: {}", req.uri().path());
+        println!("The request's headers are:");
+        for (ref header, _value) in req.headers() {
+            println!("* {}: {:?}", header, _value);
+        }
+
+        let headers = response.headers_mut();
+        headers.append("MyCustomHeader", ":)".parse().unwrap());
+
+        Ok(response)
+    };
+    let mut ws_stream = accept_hdr_async(stream, callback)
+        .await
+        .expect("Error during the websocket handshake occurred");
+
+    while let Some(msg) = ws_stream.next().await {
+        let msg = msg.unwrap();
+        if msg.is_text() || msg.is_binary() {
+            println!("Server on message: {:?}", &msg);
+            ws_stream.send(msg).await.unwrap();
+        }
+    }
+}
+
+fn client() {
+    let (mut socket, response) = connect("ws://localhost:8080/socket").expect("Can't connect");
+    println!("Connected to the server");
+    println!("Response HTTP code: {}", response.status());
+    println!("Response contains the following headers:");
+    for (ref header, _value) in response.headers() {
+        println!("* {}: {:?}", header, _value);
+    }
+
+    socket
+        .send(Message::Text("Hello WebSocket".into()))
+        .unwrap();
+    loop {
+        let msg = socket.read().expect("Error reading message");
+        println!("Received: {}", msg);
     }
 }
